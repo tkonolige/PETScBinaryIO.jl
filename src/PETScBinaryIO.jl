@@ -72,22 +72,14 @@ function readPETSc(filename; int_type = Int32, scalar_type = Float64) :: SparseM
         row_ptr[1] = 1
 
         # read row lengths
-        for i = 1:rows
-            row_ptr[i+1] = ntoh(read(io, int_type))
-        end
+        row_ptr[2:end] = map(ntoh, read(io, int_type, rows))
         cumsum!(row_ptr, row_ptr)
 
         # write column indices
-        colvals = Array{int_type}(nnz)
-        for i = 1:nnz
-            colvals[i] = ntoh(read(io, int_type)) + 1
-        end
+        colvals = map(ntoh, read(io, int_type, nnz)) .+ 1
 
         # write nonzero values
-        vals = Array{scalar_type}(nnz)
-        for i = 1:nnz
-            vals[i] = ntoh(read(io, scalar_type))
-        end
+        vals = map(ntoh, read(io, scalar_type, nnz))
 
         mat = SparseMatrixCSC(cols, rows, row_ptr, colvals, vals)
         transpose(mat)
