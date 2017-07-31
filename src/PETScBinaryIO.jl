@@ -76,7 +76,7 @@ function readPETSc(filename; int_type = Int32, scalar_type = Float64) :: SparseM
         cumsum!(row_ptr, row_ptr)
 
         # write column indices
-        colvals = map(ntoh, read(io, int_type, nnz)) .+ 1
+        colvals = map(ntoh, read(io, int_type, nnz)) .+ int_type(1)
 
         # write nonzero values
         vals = map(ntoh, read(io, scalar_type, nnz))
