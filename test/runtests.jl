@@ -1,5 +1,6 @@
 using PETScBinaryIO
-using Base.Test
+using Test
+using SparseArrays
 
 # write your own tests here
 @testset "Idempotent IO" begin

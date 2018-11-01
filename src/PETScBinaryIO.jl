@@ -2,6 +2,8 @@ module PETScBinaryIO
 
 export writePETSc, readPETSc
 
+using SparseArrays
+
 classids = Dict("Vec"=>1211214, "Mat"=>1211216)
 ids_to_class = Dict(zip(values(classids), keys(classids)))
 
@@ -23,7 +25,7 @@ and `scalar_type` need to be set to integer and scalar types that PETSc was
 configured with.
 """
 function writePETSc(filename, mat :: SparseMatrixCSC; int_type = Int32, scalar_type = Float64)
-    m = transpose(mat) # transpose for fast row operations
+    m = SparseMatrixCSC(transpose(mat)) # transpose for fast row operations
     open(filename, "w") do io
         rows, cols = size(mat)
         write(io, hton(int_type(classids["Mat"]))) # MAT_FILE_CLASSID
@@ -69,9 +71,13 @@ function writePETSc(filename, vec :: Vector; int_type = Int32, scalar_type = Flo
     end
 end
 
-function read_vec(io, int_type, scalar_type)
+function read_prefix_vec(io, int_type, scalar_type)
     len = ntoh(read(io, int_type))
     ntoh.(read(io, scalar_type, len))
+end
+
+function read_vec(io, ty, sz)
+    ntoh.(read!(io, Array{ty}(undef, sz)))
 end
 
 function read_mat(io, int_type, scalar_type)
@@ -79,21 +85,21 @@ function read_mat(io, int_type, scalar_type)
     cols = ntoh(read(io, int_type))
     nnz = ntoh(read(io, int_type))
 
-    row_ptr = Array{int_type}(rows+1)
+    row_ptr = Array{int_type}(undef, rows+1)
     row_ptr[1] = 1
 
     # read row lengths
-    row_ptr[2:end] = map(ntoh, read(io, int_type, rows))
+    row_ptr[2:end] = read_vec(io, int_type, rows)
     cumsum!(row_ptr, row_ptr)
 
     # write column indices
-    colvals = map(ntoh, read(io, int_type, nnz)) .+ int_type(1)
+    colvals = read_vec(io, int_type, nnz) .+ int_type(1)
 
     # write nonzero values
-    vals = map(ntoh, read(io, scalar_type, nnz))
+    vals = read_vec(io, scalar_type, nnz)
 
     mat = SparseMatrixCSC(cols, rows, row_ptr, colvals, vals)
-    transpose(mat)
+    SparseMatrixCSC(transpose(mat))
 end
 
 """
@@ -110,7 +116,7 @@ function readPETSc(filename; int_type = Int32, scalar_type = Float64) :: Union{S
             throw("Invalid PETSc binary file $class_id")
         end
         if ids_to_class[class_id] == "Vec"
-            read_vec(io, int_type, scalar_type)
+            read_prefix_vec(io, int_type, scalar_type)
         elseif ids_to_class[class_id] == "Mat"
             read_mat(io, int_type, scalar_type)
         end
