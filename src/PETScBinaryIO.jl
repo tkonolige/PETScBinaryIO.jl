@@ -67,13 +67,13 @@ function writePETSc(filename, vec :: Vector; int_type = Int32, scalar_type = Flo
     open(filename, "w") do io
         write(io, hton(int_type(classids["Vec"]))) # MAT_FILE_CLASSID
         write(io, hton(int_type(length(vec)))) # number of rows
-        write(io, hton.int_type.vec)
+        write(io, hton.(scalar_type.(vec)))
     end
 end
 
 function read_prefix_vec(io, int_type, scalar_type)
     len = ntoh(read(io, int_type))
-    ntoh.(read(io, scalar_type, len))
+    read_vec(io, scalar_type, len)
 end
 
 function read_vec(io, ty, sz)

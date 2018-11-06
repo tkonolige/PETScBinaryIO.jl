@@ -14,4 +14,15 @@ using SparseArrays
             rm("tmp.petsc")
         end
     end
+
+    @test begin
+        try
+            A = rand(1000)
+            writePETSc("vec.petsc", A)
+            AA = readPETSc("vec.petsc")
+            AA == A
+        finally
+            rm("vec.petsc")
+        end
+    end
 end
