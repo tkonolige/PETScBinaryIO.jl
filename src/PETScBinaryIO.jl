@@ -102,6 +102,20 @@ function read_mat(io, int_type, scalar_type)
     SparseMatrixCSC(transpose(mat))
 end
 
+function read_single(io, int_type, scalar_type)
+    class_id = ntoh(read(io, int_type))
+    if !in(class_id, keys(ids_to_class))
+        throw("Invalid PETSc binary file $class_id")
+    end
+    if ids_to_class[class_id] == "Vec"
+        read_prefix_vec(io, int_type, scalar_type)
+    elseif ids_to_class[class_id] == "Mat"
+        read_mat(io, int_type, scalar_type)
+    else
+        error("Invalid class id $class_id")
+    end
+end
+
 """
 ### readPETSc(filename; int_type = Int32, scalar_type = Float64) :: Union{SparseMatrixCSC, Vector}
 
@@ -109,17 +123,13 @@ Read a sparse matrix in PETSc's binary format from `filename`. `int_type` and
 `scalar_type` must be set to the integer and scalar types that PETSc was
 configured with.
 """
-function readPETSc(filename; int_type = Int32, scalar_type = Float64) :: Union{SparseMatrixCSC, Vector}
+function readPETSc(filename; int_type = Int32, scalar_type = Float64) :: Union{SparseMatrixCSC, Vector{SparseMatrixCSC}, Vector, Vector{Vector}}
     open(filename) do io
-        class_id = ntoh(read(io, int_type))
-        if !in(class_id, keys(ids_to_class))
-            throw("Invalid PETSc binary file $class_id")
+        items = []
+        while !eof(io)
+            push!(items, read_single(io, int_type, scalar_type))
         end
-        if ids_to_class[class_id] == "Vec"
-            read_prefix_vec(io, int_type, scalar_type)
-        elseif ids_to_class[class_id] == "Mat"
-            read_mat(io, int_type, scalar_type)
-        end
+        items
     end
 end
 
