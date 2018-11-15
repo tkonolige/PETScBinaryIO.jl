@@ -129,7 +129,11 @@ function readPETSc(filename; int_type = Int32, scalar_type = Float64) :: Union{S
         while !eof(io)
             push!(items, read_single(io, int_type, scalar_type))
         end
-        items
+        if length(items) == 1
+            items[1]
+        else
+            items
+        end
     end
 end
 
