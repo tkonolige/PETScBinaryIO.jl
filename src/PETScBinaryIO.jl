@@ -4,7 +4,7 @@ export writePETSc, readPETSc
 
 using SparseArrays
 
-classids = Dict("Vec"=>1211214, "Mat"=>1211216)
+classids = Dict("Vec"=>1211214, "Mat"=>1211216, "IS"=>1211218)
 ids_to_class = Dict(zip(values(classids), keys(classids)))
 
 # PETSc IO for binary matrix IO. Format documentation here:
@@ -111,6 +111,8 @@ function read_single(io, int_type, scalar_type)
         read_prefix_vec(io, int_type, scalar_type)
     elseif ids_to_class[class_id] == "Mat"
         read_mat(io, int_type, scalar_type)
+    elseif ids_to_class[class_id] == "IS"
+        read_prefix_vec(io, int_type, int_type) .+ 1
     else
         error("Invalid class id $class_id")
     end
