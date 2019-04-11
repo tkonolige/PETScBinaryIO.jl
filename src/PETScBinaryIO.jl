@@ -1,6 +1,6 @@
 module PETScBinaryIO
 
-export writePETSc, readPETSc
+export writepetsc, readpetsc
 
 using SparseArrays
 
@@ -17,58 +17,74 @@ ids_to_class = Dict(zip(values(classids), keys(classids)))
 #  int    *column indices of all nonzeros (starting index is zero)
 #  PetscScalar *values of all nonzeros
 
-"""
-### writePETSc(filename, mat :: SparseMatrixCSC; int_type = Int32, scalar_type = Float64)
 
-Write a sparse matrix to `filename` in a format PETSc can understand. `int_type`
-and `scalar_type` need to be set to integer and scalar types that PETSc was
-configured with.
-"""
-function writePETSc(filename, mat :: SparseMatrixCSC; int_type = Int32, scalar_type = Float64)
-    m = SparseMatrixCSC(transpose(mat)) # transpose for fast row operations
-    open(filename, "w") do io
-        rows, cols = size(mat)
-        write(io, hton(int_type(classids["Mat"]))) # MAT_FILE_CLASSID
-        write(io, hton(int_type(rows))) # number of rows
-        write(io, hton(int_type(cols))) # number of columns
-        write(io, hton(int_type(nnz(mat)))) # number of nonzeros
+function write_(io :: IO, mat :: SparseMatrixCSC, int_type, scalar_type)
+    m = SparseMatrixCSC(transpose(mat))
+    rows, cols = size(mat)
+    write(io, hton(int_type(classids["Mat"]))) # MAT_FILE_CLASSID
+    write(io, hton(int_type(rows))) # number of rows
+    write(io, hton(int_type(cols))) # number of columns
+    write(io, hton(int_type(nnz(mat)))) # number of nonzeros
 
-        # write row lengths
-        for i = 1:rows
-            write(io, hton(int_type(length(nzrange(m, i)))))
+    # write row lengths
+    for i = 1:rows
+        write(io, hton(int_type(length(nzrange(m, i)))))
+    end
+
+    # write column indices
+    cols = rowvals(m)
+    for i = 1:rows
+        for j in nzrange(m, i)
+            write(io, hton(int_type(cols[j] - 1))) # PETSc uses 0-indexed arrays
         end
+    end
 
-        # write column indices
-        cols = rowvals(m)
-        for i = 1:rows
-            for j in nzrange(m, i)
-                write(io, hton(int_type(cols[j] - 1))) # PETSc uses 0-indexed arrays
-            end
-        end
-
-        # write nonzero values
-        vals = nonzeros(m)
-        for i = 1:rows
-            for j in nzrange(m, i)
-                write(io, hton(scalar_type(vals[j])))
-            end
+    # write nonzero values
+    vals = nonzeros(m)
+    for i = 1:rows
+        for j in nzrange(m, i)
+            write(io, hton(scalar_type(vals[j])))
         end
     end
 end
 
-"""
-### writePETSc(filename, mat :: SparseMatrixCSC; int_type = Int32, scalar_type = Float64)
-
-Write a vector to `filename` in a format PETSc can understand. `int_type`
-and `scalar_type` need to be set to integer and scalar types that PETSc was
-configured with.
-"""
-function writePETSc(filename, vec :: Vector; int_type = Int32, scalar_type = Float64)
-    open(filename, "w") do io
-        write(io, hton(int_type(classids["Vec"]))) # MAT_FILE_CLASSID
-        write(io, hton(int_type(length(vec)))) # number of rows
+function write_(io :: IO, vec :: Vector, int_type, scalar_type)
+    if eltype(vec) <: Integer
+        write(io, hton(int_type(classids["IS"])))
+    else
+        write(io, hton(int_type(classids["Vec"])))
+    end
+    write(io, hton(int_type(length(vec)))) # number of rows
+    if eltype(vec) <: Integer
+        write(io, hton.(int_type.(vec .- 1)))
+    else
         write(io, hton.(scalar_type.(vec)))
     end
+end
+
+"""
+### writepetsc(filename, mat :: Vector{Union{SparseMatrixCSC, Vector}}; int_type = nothing, scalar_type = nothing)
+
+Write a sparse matrix or vector to `filename` in a format PETSc can understand.
+`PETSC_DIR` and `PETSC_ARCH` will be used to determine the size of types
+written. `int_type` and `scalar_type` can be used to manually specify which
+types are desired.
+"""
+function writepetsc(filename :: AbstractString, objs; int_type = nothing, scalar_type = nothing)
+    int_type, scalar_type = determine_type(int_type, scalar_type)
+    open(filename, "w") do io
+        for o in objs
+            write_(io, o, int_type, scalar_type)
+        end
+    end
+end
+
+function writepetsc(filename :: AbstractString, mat :: SparseMatrixCSC; int_type = nothing, scalar_type = nothing)
+    writepetsc(filename, [mat]; int_type=int_type, scalar_type=scalar_type)
+end
+
+function writepetsc(filename :: AbstractString, vec :: Vector{T}; int_type = nothing, scalar_type = nothing) where T <: Number
+    writepetsc(filename, [vec]; int_type=int_type, scalar_type=scalar_type)
 end
 
 function read_prefix_vec(io, int_type, scalar_type)
@@ -77,7 +93,9 @@ function read_prefix_vec(io, int_type, scalar_type)
 end
 
 function read_vec(io, ty, sz)
-    ntoh.(read!(io, Array{ty}(undef, sz)))
+    ary = Array{ty}(undef, sz)
+    read!(io, ary)
+    ntoh.(ary)
 end
 
 function read_mat(io, int_type, scalar_type)
@@ -119,23 +137,71 @@ function read_single(io, int_type, scalar_type)
 end
 
 """
-### readPETSc(filename; int_type = Int32, scalar_type = Float64) :: Union{SparseMatrixCSC, Vector}
-
-Read a sparse matrix in PETSc's binary format from `filename`. `int_type` and
-`scalar_type` must be set to the integer and scalar types that PETSc was
-configured with.
+Tries to find and parse a petscvariables file.
 """
-function readPETSc(filename; int_type = Int32, scalar_type = Float64) :: Union{SparseMatrixCSC, Vector{SparseMatrixCSC}, Vector, Vector{Vector}}
+function parse_petsc_config()
+    default_sizes = (Int32, Float64)
+    isizemap = Dict(32 => Int32, 64 => Int64)
+    ssizemap = Dict(32 => Float32, 64 => Float64)
+    path = nothing
+    if haskey(ENV, "PETSC_DIR")
+        dir = ENV["PETSC_DIR"]
+        path = joinpath(dir, "lib", "petsc", "conf", "petscvariables")
+        if haskey(ENV, "PETSC_ARCH")
+            arch = ENV["PETSC_ARCH"]
+            path = joinpath(dir, arch, "lib", "petsc", "conf", "petscvariables")
+        end
+    end
+
+    if path != nothing && isfile(path)
+        isize = -1
+        ssize = -1
+        for line in eachline(path)
+            if occursin("PETSC_SCALAR_SIZE", line)
+                ssize = parse(Int, match(r"[0-9]+", line).match)
+            end
+            if occursin("PETSC_INDEX_SIZE", line)
+                isize = parse(Int, match(r"[0-9]+", line).match)
+            end
+        end
+        if !haskey(isizemap, isize) || !haskey(ssizemap, ssize)
+            @warn "Could not determine PETSC_INDEX_SIZE and PETSC_SCALAR_SIZE from $path, defaulting to $default_sizes" maxlog=1
+            return default_sizes
+        end
+        return (isizemap[isize], ssizemap[ssize])
+    elseif path != nothing
+        @warn "$path does not exist, defaulting to $default_sizes" maxlog=1
+    end
+    default_sizes
+end
+
+function determine_type(int_type, scalar_type)
+    config_int_type, config_scalar_type = parse_petsc_config()
+    if int_type == nothing
+        int_type = config_int_type
+    end
+    if scalar_type == nothing
+        scalar_type = config_scalar_type
+    end
+    int_type, scalar_type
+end
+
+"""
+### readpetsc(filename; int_type = nothing, scalar_type = nothing)
+           :: Vector{Union{SparseMatrixCSC, Vector}}
+
+Read a sparse matrix in PETSc's binary format from `filename`. PETSC_DIR and
+PETSC_ARCH will be used to determine the correct integer and float type to use.
+`int_type` and `scalar_type` can be used to override these values.
+"""
+function readpetsc(filename; int_type = nothing, scalar_type = nothing) :: Vector{Union{SparseMatrixCSC, Vector}}
+    int_type, scalar_type = determine_type(int_type, scalar_type)
     open(filename) do io
         items = []
         while !eof(io)
             push!(items, read_single(io, int_type, scalar_type))
         end
-        if length(items) == 1
-            items[1]
-        else
-            items
-        end
+        items
     end
 end
 

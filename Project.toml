@@ -1,7 +1,7 @@
 name = "PETScBinaryIO"
 uuid = "437dea2e-de0d-11e8-31df-ef70b35f8dd5"
 authors = ["Tristan Konolige <tristan.konolige@gmail.com>"]
-version = "0.1.0"
+version = "1.0.0"
 
 [deps]
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
