@@ -22,7 +22,7 @@ function idempotent_io(int_type, scalar_type, itype_check, stype_check)
     end
 end
 
-@testset begin
+@testset "Test Suite" begin
     @testset "Idempotent IO" begin
         for itype in [Int32, Int64]
             for stype in [Float32, Float64]
