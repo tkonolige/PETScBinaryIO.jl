@@ -1,5 +1,5 @@
 name = "PETScBinaryIO"
-uuid = "437dea2e-de0d-11e8-31df-ef70b35f8dd5"
+uuid = "7d8a6817-b67b-57e2-acac-4a73d125cd6b"
 authors = ["Tristan Konolige <tristan.konolige@gmail.com>"]
 version = "1.0.0"
 
